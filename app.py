@@ -13,12 +13,11 @@ from collections import deque
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
 import time
 import json
 import plotly.express as px
 import plotly.graph_objects as go
+import threading
 
 # Configure Streamlit FIRST
 st.set_page_config(
@@ -141,6 +140,134 @@ class ViolenceDetector:
             print(f"Detection error: {e}")
             return False, 0.0
 
+# Email Notification System - RUNS IN BACKGROUND THREAD
+def send_email_async(user_id, video_filename, incidents):
+    """Send email in background thread"""
+    thread = threading.Thread(target=send_email_notification, args=(user_id, video_filename, incidents), daemon=True)
+    thread.start()
+
+def send_email_notification(user_id, video_filename, incidents):
+    """Send email notification for detected incidents"""
+    try:
+        print(f"\n🔥🔥🔥 EMAIL FUNCTION CALLED 🔥🔥🔥")
+        print(f"🔧 Email debug: user_id={user_id}, video={video_filename}, incidents count={len(incidents)}")
+        
+        if not incidents or len(incidents) == 0:
+            print("⚠️ No incidents to notify")
+            return
+        
+        # Get user settings
+        conn = sqlite3.connect('violence_detection.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+        SELECT us.email_notifications, us.notification_email, u.username
+        FROM user_settings us JOIN users u ON us.user_id = u.id
+        WHERE us.user_id = ?
+        ''', (user_id,))
+        
+        settings = cursor.fetchone()
+        conn.close()
+        
+        if not settings:
+            print("❌ No user settings found")
+            return
+        
+        email_enabled, email_addr, username = settings
+        
+        if not email_enabled:
+            print(f"📧 Email notifications disabled for {username}")
+            return
+        
+        if not email_addr:
+            print(f"📧 No email address set for {username}")
+            return
+        
+        print(f"✅ Email enabled for {username} → {email_addr}")
+        
+        # Get secrets from Streamlit Cloud
+        try:
+            smtp_server = st.secrets["SMTP_SERVER"]
+            smtp_port = int(st.secrets["SMTP_PORT"])
+            sender_email = st.secrets["SENDER_EMAIL"]
+            sender_password = st.secrets["SENDER_PASSWORD"]
+            print(f"✅ Loaded Streamlit secrets: {sender_email}")
+        except Exception as e:
+            print(f"⚠️ Secrets error: {e}, falling back to .env")
+            smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
+            smtp_port = int(os.getenv('SMTP_PORT', '587'))
+            sender_email = os.getenv('SENDER_EMAIL')
+            sender_password = os.getenv('SENDER_PASSWORD')
+        
+        if not sender_email or not sender_password:
+            print(f"❌ SMTP credentials missing: sender={sender_email}, password={'***' if sender_password else 'NONE'}")
+            return
+        
+        print(f"✅ SMTP Ready: {smtp_server}:{smtp_port}")
+        
+        # Build email
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = email_addr
+        msg['Subject'] = f"🚨 VIOLENCE DETECTED - {len(incidents)} incidents"
+        
+        # Format incidents
+        incident_text = ""
+        for i, inc in enumerate(incidents[:10], 1):
+            if isinstance(inc, dict):
+                timestamp = inc.get('timestamp_formatted', 'N/A')
+                confidence = inc.get('confidence', 0)
+            else:
+                timestamp = "N/A"
+                confidence = 0
+            
+            incident_text += f"   {i}. Time: {timestamp} - Confidence: {confidence:.1%}\n"
+        
+        body = f"""Dear {username},
+
+🚨 VIOLENCE DETECTED IN YOUR VIDEO! 🚨
+
+📊 Detection Summary:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Total incidents: {len(incidents)}
+• Video file: {video_filename}
+• Detection time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+🚨 Detected Incidents:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{incident_text}
+
+📱 ACTION REQUIRED:
+Login to review the full analysis and take necessary action.
+Dashboard: https://violence-detection-cctv-niranjana006.streamlit.app
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This is an automated alert from Violence Detection System
+"""
+        
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Send email
+        print(f"📧 Connecting to {smtp_server}:{smtp_port}...")
+        server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
+        server.starttls()
+        
+        print(f"🔐 Logging in as {sender_email}...")
+        server.login(sender_email, sender_password)
+        
+        print(f"📤 Sending email to {email_addr}...")
+        server.sendmail(sender_email, email_addr, msg.as_string())
+        server.quit()
+        
+        print(f"\n✅✅✅ EMAIL SENT SUCCESSFULLY TO {email_addr} ✅✅✅\n")
+        
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ SMTP Auth failed: {e}")
+        print(f"   Check SENDER_EMAIL and SENDER_PASSWORD in secrets")
+    except smtplib.SMTPException as e:
+        print(f"❌ SMTP error: {e}")
+    except Exception as e:
+        print(f"❌ Email error: {e}")
+
 # Video Processing Functions
 def process_video_file(video_path, user_id, video_id, detector, progress_bar, status_text):
     """Process uploaded video file"""
@@ -202,13 +329,20 @@ def process_video_file(video_path, user_id, video_id, detector, progress_bar, st
         update_video_analysis_status(video_id, len(incidents))
         status_text.text(f"✅ Analysis complete! Found {len(incidents)} incidents")
         
-        if incidents:
-            send_email_notification(user_id, video_path, incidents)
+        # SEND EMAIL ASYNC
+        if incidents and len(incidents) > 0:
+            print(f"\n🔥 TRIGGERING EMAIL SEND for {len(incidents)} incidents...")
+            video_filename = os.path.basename(video_path)
+            send_email_async(user_id, video_filename, incidents)
+            print(f"🔥 EMAIL THREAD STARTED")
+        else:
+            print(f"⚠️ No incidents found, skipping email")
         
         return incidents
         
     except Exception as e:
         st.error(f"Error processing video: {e}")
+        print(f"❌ Video processing error: {e}")
         return []
 
 # Database Functions
@@ -346,117 +480,6 @@ def get_user_statistics(user_id):
         'videos_today': videos_today,
         'daily_incidents': daily_incidents
     }
-
-# Email Notification System
-def send_email_notification(user_id, video_filename, incidents):
-    """Send email notification for detected incidents"""
-    try:
-        print(f"🔧 Email debug: incidents={incidents}, type={type(incidents)}")
-        
-        if not incidents or len(incidents) == 0:
-            print("⚠️ No incidents to notify")
-            return
-        
-        # Get user settings
-        conn = sqlite3.connect('violence_detection.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-        SELECT us.email_notifications, us.notification_email, u.username
-        FROM user_settings us JOIN users u ON us.user_id = u.id
-        WHERE us.user_id = ?
-        ''', (user_id,))
-        
-        settings = cursor.fetchone()
-        conn.close()
-        
-        if not settings:
-            print("❌ No user settings found")
-            return
-        
-        email_enabled, email_addr, username = settings
-        
-        if not email_enabled:
-            print("📧 Email notifications disabled")
-            return
-        
-        if not email_addr:
-            print("📧 No email address set")
-            return
-        
-        # Get secrets from Streamlit Cloud
-        try:
-            smtp_server = st.secrets["SMTP_SERVER"]
-            smtp_port = int(st.secrets["SMTP_PORT"])
-            sender_email = st.secrets["SENDER_EMAIL"]
-            sender_password = st.secrets["SENDER_PASSWORD"]
-            print(f"✅ Using Streamlit secrets: {sender_email}")
-        except Exception as e:
-            print(f"⚠️ Secrets error: {e}, falling back to .env")
-            smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-            smtp_port = int(os.getenv('SMTP_PORT', '587'))
-            sender_email = os.getenv('SENDER_EMAIL')
-            sender_password = os.getenv('SENDER_PASSWORD')
-        
-        if not sender_email or not sender_password:
-            print("❌ SMTP credentials missing")
-            return
-        
-        # Build email
-        msg = MIMEMultipart()
-        msg['From'] = sender_email
-        msg['To'] = email_addr
-        msg['Subject'] = f"🚨 Violence Detection Alert - {len(incidents)} incidents"
-        
-        # Format incidents
-        incident_text = ""
-        for i, inc in enumerate(incidents[:5], 1):
-            if isinstance(inc, dict):
-                timestamp = inc.get('timestamp_formatted', 'N/A')
-                confidence = inc.get('confidence', 0)
-            else:
-                timestamp = "N/A"
-                confidence = 0
-            
-            incident_text += f"   {i}. Time: {timestamp} - Confidence: {confidence:.1%}\n"
-        
-        body = f"""Dear {username},
-
-Violence has been detected in your uploaded video!
-
-📊 Detection Summary:
-• Total incidents: {len(incidents)}
-• Video: {video_filename}
-• Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-🚨 Incidents:
-{incident_text}
-
-Login to review: https://violence-detection-cctv-niranjana006.streamlit.app
-
----
-Violence Detection System
-"""
-        
-        msg.attach(MIMEText(body, 'plain'))
-        
-        # Send email
-        print(f"📧 Attempting to send to {email_addr}...")
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.sendmail(sender_email, email_addr, msg.as_string())
-        server.quit()
-        
-        print(f"✅ Email sent successfully to {email_addr}")
-        
-    except smtplib.SMTPAuthenticationError:
-        print(f"❌ SMTP Auth failed - check email/password")
-    except smtplib.SMTPException as e:
-        print(f"❌ SMTP error: {e}")
-    except Exception as e:
-        print(f"❌ Email error: {e}")
-
-######
 
 # Utility Functions
 def format_timestamp(seconds):
@@ -708,7 +731,7 @@ def settings_page():
     with st.form("settings_form"):
         st.subheader("📧 Email Notifications")
         new_email_notifications = st.checkbox("Enable email notifications", value=email_notifications)
-        new_notification_email = st.text_input("Notification Email", value=notification_email or "")
+        new_notification_email = st.text_input("Notification Email", value=notification_email or st.session_state.email)
         
         st.subheader("🎯 Detection Settings")
         new_confidence_threshold = st.slider(
