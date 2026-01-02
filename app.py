@@ -828,6 +828,10 @@ def main():
     
     with st.sidebar:
         st.title("🛡️ Navigation")
+        st.markdown("### 🔍 DEBUG LOGS")
+        log_text = get_live_logs()  # Your log function
+        st.text_area("Console Output", log_text, height=200, key="live_logs")
+
         if st.button("🏠 Dashboard"):
             st.session_state.page = "dashboard"
             st.rerun()
