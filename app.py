@@ -17,7 +17,6 @@ import time
 import json
 import plotly.express as px
 import plotly.graph_objects as go
-import threading
 
 # Configure Streamlit FIRST
 st.set_page_config(
@@ -140,14 +139,9 @@ class ViolenceDetector:
             print(f"Detection error: {e}")
             return False, 0.0
 
-# Email Notification System - RUNS IN BACKGROUND THREAD
-def send_email_async(user_id, video_filename, incidents):
-    """Send email in background thread"""
-    thread = threading.Thread(target=send_email_notification, args=(user_id, video_filename, incidents), daemon=True)
-    thread.start()
-
+# Email Notification System - DIRECT/SYNCHRONOUS
 def send_email_notification(user_id, video_filename, incidents):
-    """Send email notification for detected incidents"""
+    """Send email notification for detected incidents - SYNCHRONOUS"""
     try:
         print(f"\n🔥🔥🔥 EMAIL FUNCTION CALLED 🔥🔥🔥")
         print(f"🔧 Email debug: user_id={user_id}, video={video_filename}, incidents count={len(incidents)}")
@@ -199,7 +193,7 @@ def send_email_notification(user_id, video_filename, incidents):
             sender_password = os.getenv('SENDER_PASSWORD')
         
         if not sender_email or not sender_password:
-            print(f"❌ SMTP credentials missing: sender={sender_email}, password={'***' if sender_password else 'NONE'}")
+            print(f"❌ SMTP credentials missing")
             return
         
         print(f"✅ SMTP Ready: {smtp_server}:{smtp_port}")
@@ -226,22 +220,15 @@ def send_email_notification(user_id, video_filename, incidents):
 
 🚨 VIOLENCE DETECTED IN YOUR VIDEO! 🚨
 
-📊 Detection Summary:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Detection Summary:
 • Total incidents: {len(incidents)}
-• Video file: {video_filename}
-• Detection time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+• Video: {video_filename}
+• Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-🚨 Detected Incidents:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Incidents:
 {incident_text}
 
-📱 ACTION REQUIRED:
-Login to review the full analysis and take necessary action.
-Dashboard: https://violence-detection-cctv-niranjana006.streamlit.app
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-This is an automated alert from Violence Detection System
+Login: https://violence-detection-cctv-niranjana006.streamlit.app
 """
         
         msg.attach(MIMEText(body, 'plain'))
@@ -251,18 +238,17 @@ This is an automated alert from Violence Detection System
         server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
         server.starttls()
         
-        print(f"🔐 Logging in as {sender_email}...")
+        print(f"🔐 Logging in...")
         server.login(sender_email, sender_password)
         
-        print(f"📤 Sending email to {email_addr}...")
+        print(f"📤 Sending to {email_addr}...")
         server.sendmail(sender_email, email_addr, msg.as_string())
         server.quit()
         
-        print(f"\n✅✅✅ EMAIL SENT SUCCESSFULLY TO {email_addr} ✅✅✅\n")
+        print(f"\n✅✅✅ EMAIL SENT TO {email_addr} ✅✅✅\n")
         
     except smtplib.SMTPAuthenticationError as e:
         print(f"❌ SMTP Auth failed: {e}")
-        print(f"   Check SENDER_EMAIL and SENDER_PASSWORD in secrets")
     except smtplib.SMTPException as e:
         print(f"❌ SMTP error: {e}")
     except Exception as e:
@@ -329,12 +315,12 @@ def process_video_file(video_path, user_id, video_id, detector, progress_bar, st
         update_video_analysis_status(video_id, len(incidents))
         status_text.text(f"✅ Analysis complete! Found {len(incidents)} incidents")
         
-        # SEND EMAIL ASYNC
+        # SEND EMAIL SYNCHRONOUSLY
         if incidents and len(incidents) > 0:
-            print(f"\n🔥 TRIGGERING EMAIL SEND for {len(incidents)} incidents...")
+            print(f"\n🔥 SENDING EMAIL for {len(incidents)} incidents...")
             video_filename = os.path.basename(video_path)
-            send_email_async(user_id, video_filename, incidents)
-            print(f"🔥 EMAIL THREAD STARTED")
+            send_email_notification(user_id, video_filename, incidents)
+            print(f"🔥 EMAIL SENT")
         else:
             print(f"⚠️ No incidents found, skipping email")
         
