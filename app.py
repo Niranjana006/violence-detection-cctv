@@ -794,6 +794,15 @@ def settings_page():
             conn.commit()
             conn.close()
             st.success("✅ Settings saved successfully!")
+def get_live_logs():
+    """Get live console logs"""
+    try:
+        import subprocess
+        result = subprocess.run(['tail', '-n', '100', '/tmp/streamlit.log'], 
+                              capture_output=True, text=True, timeout=5)
+        return result.stdout or "No logs yet - run video analysis"
+    except:
+        return "Logs unavailable - check terminal"
 
 # Main Application
 def main():
@@ -802,6 +811,11 @@ def main():
     os.makedirs("models", exist_ok=True)
     os.makedirs("uploads", exist_ok=True)
     os.makedirs("screenshots", exist_ok=True)
+    
+    # 🔥 LIVE LOG VIEWER
+    st.sidebar.title("🔍 DEBUG")
+    if st.sidebar.button("📋 SHOW CONSOLE LOGS"):
+        st.sidebar.text_area("LOGS", get_live_logs(), height=400)
     
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
