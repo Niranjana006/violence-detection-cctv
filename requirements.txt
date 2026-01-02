@@ -1,32 +1,9 @@
-# Violence Detection System - Requirements
-# All dependencies needed for the application
-
-# Core dependencies
-streamlit==1.28.1
-tensorflow==2.13.0
-opencv-python==4.8.1.78
-numpy==1.24.3
-pandas==2.0.3
-
-# Database
-sqlite3  # Built into Python
-
-# Email
-smtplib  # Built into Python
-
-# Data visualization
-plotly==5.17.0
-
-# Image processing
-Pillow==10.0.1
-
-# Additional utilities
-python-dotenv==1.0.0
-hashlib  # Built into Python
-
-# Optional: For better performance
-# tensorflow-gpu==2.13.0  # Uncomment if you have NVIDIA GPU
-
-# Development tools (optional)
-# jupyter==1.0.0
-# notebook==7.0.6
+streamlit==1.38.0
+tensorflow==2.17.0
+keras==3.4.1
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+pandas==2.2.2
+plotly==5.22.0
+Pillow==10.4.0
+python-dotenv==1.0.1
