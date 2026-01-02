@@ -139,18 +139,23 @@ class ViolenceDetector:
             print(f"Detection error: {e}")
             return False, 0.0
 
-# Email Notification System - DIRECT/SYNCHRONOUS
+# Email Notification System - FIXED VERSION
 def send_email_notification(user_id, video_filename, incidents):
-    """Send email notification for detected incidents - SYNCHRONOUS"""
+    """Send email notification for detected incidents - WITH DETAILED DEBUG"""
     try:
-        print(f"\n🔥🔥🔥 EMAIL FUNCTION CALLED 🔥🔥🔥")
-        print(f"🔧 Email debug: user_id={user_id}, video={video_filename}, incidents count={len(incidents)}")
+        print(f"\n{'='*60}")
+        print(f"🔥 STEP 1: EMAIL FUNCTION CALLED")
+        print(f"   user_id={user_id}, video={video_filename}, incidents={len(incidents)}")
+        print(f"{'='*60}")
         
         if not incidents or len(incidents) == 0:
-            print("⚠️ No incidents to notify")
+            print("❌ STEP 2: No incidents to notify - RETURNING")
             return
         
+        print("✅ STEP 2: Incidents exist, proceeding...")
+        
         # Get user settings
+        print("⏳ STEP 3: Fetching user settings from database...")
         conn = sqlite3.connect('violence_detection.db')
         cursor = conn.cursor()
         cursor.execute('''
@@ -163,48 +168,61 @@ def send_email_notification(user_id, video_filename, incidents):
         conn.close()
         
         if not settings:
-            print("❌ No user settings found")
+            print("❌ STEP 3: No user settings found - RETURNING")
             return
+        
+        print("✅ STEP 3: User settings retrieved")
         
         email_enabled, email_addr, username = settings
         
         if not email_enabled:
-            print(f"📧 Email notifications disabled for {username}")
+            print(f"❌ STEP 4: Email notifications DISABLED for {username}")
             return
+        
+        print(f"✅ STEP 4: Email notifications ENABLED")
         
         if not email_addr:
-            print(f"📧 No email address set for {username}")
+            print(f"❌ STEP 5: No email address set for {username}")
             return
         
-        print(f"✅ Email enabled for {username} → {email_addr}")
+        print(f"✅ STEP 5: Email address set → {email_addr}")
         
-        # Get secrets from Streamlit Cloud
+        # Get secrets
+        print("⏳ STEP 6: Loading SMTP credentials...")
         try:
             smtp_server = st.secrets["SMTP_SERVER"]
             smtp_port = int(st.secrets["SMTP_PORT"])
             sender_email = st.secrets["SENDER_EMAIL"]
             sender_password = st.secrets["SENDER_PASSWORD"]
-            print(f"✅ Loaded Streamlit secrets: {sender_email}")
+            print(f"✅ STEP 6: Loaded from Streamlit Secrets")
+            print(f"   SMTP: {smtp_server}:{smtp_port}")
+            print(f"   From: {sender_email}")
         except Exception as e:
-            print(f"⚠️ Secrets error: {e}, falling back to .env")
+            print(f"⚠️  Streamlit secrets failed: {e}")
+            print(f"⏳ STEP 6: Falling back to .env file...")
             smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
             smtp_port = int(os.getenv('SMTP_PORT', '587'))
             sender_email = os.getenv('SENDER_EMAIL')
             sender_password = os.getenv('SENDER_PASSWORD')
+            print(f"✅ STEP 6: Loaded from .env")
+            print(f"   SMTP: {smtp_server}:{smtp_port}")
+            print(f"   From: {sender_email}")
         
         if not sender_email or not sender_password:
-            print(f"❌ SMTP credentials missing")
+            print(f"❌ STEP 6: SMTP credentials MISSING")
+            print(f"   SENDER_EMAIL: {sender_email}")
+            print(f"   SENDER_PASSWORD: {'*' * len(sender_password) if sender_password else 'NONE'}")
             return
         
-        print(f"✅ SMTP Ready: {smtp_server}:{smtp_port}")
+        print(f"✅ STEP 6: All SMTP credentials present")
         
         # Build email
+        print("⏳ STEP 7: Building email message...")
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = email_addr
         msg['Subject'] = f"🚨 VIOLENCE DETECTED - {len(incidents)} incidents"
         
-        # Format incidents
         incident_text = ""
         for i, inc in enumerate(incidents[:10], 1):
             if isinstance(inc, dict):
@@ -213,7 +231,6 @@ def send_email_notification(user_id, video_filename, incidents):
             else:
                 timestamp = "N/A"
                 confidence = 0
-            
             incident_text += f"   {i}. Time: {timestamp} - Confidence: {confidence:.1%}\n"
         
         body = f"""Dear {username},
@@ -232,27 +249,62 @@ Login: https://violence-detection-cctv-niranjana006.streamlit.app
 """
         
         msg.attach(MIMEText(body, 'plain'))
+        print(f"✅ STEP 7: Email message built")
+        
+        # Connect to SMTP
+        print(f"⏳ STEP 8: Connecting to SMTP server {smtp_server}:{smtp_port}...")
+        try:
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
+            print(f"✅ STEP 8: SMTP connection established")
+        except smtplib.SMTPException as e:
+            print(f"❌ STEP 8: SMTP connection failed: {e}")
+            return
+        
+        # Start TLS
+        print(f"⏳ STEP 9: Starting TLS encryption...")
+        try:
+            server.starttls()
+            print(f"✅ STEP 9: TLS started")
+        except smtplib.SMTPException as e:
+            print(f"❌ STEP 9: TLS failed: {e}")
+            server.quit()
+            return
+        
+        # Login
+        print(f"⏳ STEP 10: Authenticating with email: {sender_email}...")
+        try:
+            server.login(sender_email, sender_password)
+            print(f"✅ STEP 10: Authentication successful")
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"❌ STEP 10: Authentication FAILED: {e}")
+            print(f"   Check your SMTP credentials in .env or Streamlit Secrets")
+            server.quit()
+            return
+        except smtplib.SMTPException as e:
+            print(f"❌ STEP 10: Login error: {e}")
+            server.quit()
+            return
         
         # Send email
-        print(f"📧 Connecting to {smtp_server}:{smtp_port}...")
-        server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
-        server.starttls()
+        print(f"⏳ STEP 11: Sending email to {email_addr}...")
+        try:
+            server.sendmail(sender_email, email_addr, msg.as_string())
+            print(f"✅ STEP 11: Email sent successfully")
+        except smtplib.SMTPException as e:
+            print(f"❌ STEP 11: Send failed: {e}")
+            server.quit()
+            return
         
-        print(f"🔐 Logging in...")
-        server.login(sender_email, sender_password)
-        
-        print(f"📤 Sending to {email_addr}...")
-        server.sendmail(sender_email, email_addr, msg.as_string())
+        # Close connection
         server.quit()
+        print(f"\n{'='*60}")
+        print(f"✅✅✅ EMAIL SUCCESSFULLY SENT TO {email_addr} ✅✅✅")
+        print(f"{'='*60}\n")
         
-        print(f"\n✅✅✅ EMAIL SENT TO {email_addr} ✅✅✅\n")
-        
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"❌ SMTP Auth failed: {e}")
-    except smtplib.SMTPException as e:
-        print(f"❌ SMTP error: {e}")
     except Exception as e:
-        print(f"❌ Email error: {e}")
+        print(f"❌ UNEXPECTED ERROR: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
 
 # Video Processing Functions
 def process_video_file(video_path, user_id, video_id, detector, progress_bar, status_text):
@@ -317,10 +369,10 @@ def process_video_file(video_path, user_id, video_id, detector, progress_bar, st
         
         # SEND EMAIL SYNCHRONOUSLY
         if incidents and len(incidents) > 0:
-            print(f"\n🔥 SENDING EMAIL for {len(incidents)} incidents...")
+            print(f"\n🔥 TRIGGERING EMAIL SEND for {len(incidents)} incidents...")
             video_filename = os.path.basename(video_path)
             send_email_notification(user_id, video_filename, incidents)
-            print(f"🔥 EMAIL SENT")
+            print(f"🔥 EMAIL FUNCTION COMPLETED")
         else:
             print(f"⚠️ No incidents found, skipping email")
         
