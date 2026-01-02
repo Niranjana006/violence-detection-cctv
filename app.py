@@ -808,50 +808,34 @@ def get_live_logs():
 def main():
     """Main application function"""
     init_database()
-    os.makedirs("models", exist_ok=True)
     os.makedirs("uploads", exist_ok=True)
     os.makedirs("screenshots", exist_ok=True)
-    
-    # 🔥 LIVE LOG VIEWER
-    st.sidebar.title("🔍 DEBUG")
-    if st.sidebar.button("📋 SHOW CONSOLE LOGS"):
-        st.sidebar.text_area("LOGS", get_live_logs(), height=400)
     
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'page' not in st.session_state:
-        st.session_state.page = "dashboard"
+        st.session_state.page = "login"
+    
+    # Sidebar always
+    with st.sidebar:
+        st.title("🛡️ Navigation")
+        if st.session_state.get('logged_in', False):
+            if st.button("🏠 Dashboard"): st.session_state.page = "dashboard"; st.rerun()
+            if st.button("📹 Upload"): st.session_state.page = "upload"; st.rerun()
+            if st.button("📁 History"): st.session_state.page = "history"; st.rerun()
+            if st.button("⚙️ Settings"): st.session_state.page = "settings"; st.rerun()
+            if st.button("🚪 Logout"):
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.session_state.logged_in = False
+                st.rerun()
+            st.markdown(f"**{st.session_state.username}**")
+        st.markdown("### 🔍 Logs")
+        st.text_area("Console", get_live_logs(), height=150)
     
     if not st.session_state.logged_in:
         login_page()
-        return
-    
-    with st.sidebar:
-        st.title("🛡️ Navigation")
-        st.markdown("### 🔍 DEBUG LOGS")
-        log_text = get_live_logs()  # Your log function
-        st.text_area("Console Output", log_text, height=200, key="live_logs")
-
-        if st.button("🏠 Dashboard"):
-            st.session_state.page = "dashboard"
-            st.rerun()
-        if st.button("📹 Upload Video"):
-            st.session_state.page = "upload"
-            st.rerun()
-        if st.button("📁 Video History"):
-            st.session_state.page = "history"
-            st.rerun()
-        if st.button("⚙️ Settings"):
-            st.session_state.page = "settings"
-            st.rerun()
-        st.divider()
-        if st.button("🚪 Logout"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-        st.markdown(f"**Logged in as:** {st.session_state.username}")
-    
-    if st.session_state.page == "dashboard":
+    elif st.session_state.page == "dashboard":
         dashboard_page()
     elif st.session_state.page == "upload":
         upload_video_page()
