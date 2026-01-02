@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-import tensorflow as tf
+#import tensorflow as tf
 from collections import deque
 import smtplib
 from email.mime.text import MIMEText
