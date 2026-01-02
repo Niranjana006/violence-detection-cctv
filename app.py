@@ -195,18 +195,10 @@ def send_email_notification(user_id, video_filename, incidents):
             sender_email = st.secrets["SENDER_EMAIL"]
             sender_password = st.secrets["SENDER_PASSWORD"]
             print(f"✅ STEP 6: Loaded from Streamlit Secrets")
-            print(f"   SMTP: {smtp_server}:{smtp_port}")
-            print(f"   From: {sender_email}")
+            
         except Exception as e:
-            print(f"⚠️  Streamlit secrets failed: {e}")
-            print(f"⏳ STEP 6: Falling back to .env file...")
-            smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-            smtp_port = int(os.getenv('SMTP_PORT', '587'))
-            sender_email = os.getenv('SENDER_EMAIL')
-            sender_password = os.getenv('SENDER_PASSWORD')
-            print(f"✅ STEP 6: Loaded from .env")
-            print(f"   SMTP: {smtp_server}:{smtp_port}")
-            print(f"   From: {sender_email}")
+            print(f"⚠️ Streamlit secrets failed: {e}")
+            return
         
         if not sender_email or not sender_password:
             print(f"❌ STEP 6: SMTP credentials MISSING")
