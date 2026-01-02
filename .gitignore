@@ -29,7 +29,7 @@ env.bak/
 venv.bak/
 
 # Streamlit
-.streamlit/
+#.streamlit/
 
 # Database
 *.db
@@ -38,8 +38,8 @@ violence_detection.db-shm
 violence_detection.db-wal
 
 # ML Models & Cache
-models/
-*.h5
+
+
 *.pkl
 *.joblib
 pycache/
