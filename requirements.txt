@@ -4,4 +4,4 @@ plotly
 Pillow
 python-dotenv
 opencv-python-headless
-resend
+resend==0.2.2
