@@ -141,7 +141,7 @@ class ViolenceDetector:
 
 # Email Notification System - FIXED VERSION
 def send_email_notification(user_id, video_filename, incidents):
-    """Send email via Resend API - Render/Cloud compatible"""
+    """Send email via HTTP requests - NO resend package needed"""
     try:
         print(f"\n{'='*60}")
         print(f"🔥 STEP 1: EMAIL FUNCTION CALLED - {len(incidents)} incidents")
@@ -174,90 +174,55 @@ def send_email_notification(user_id, video_filename, incidents):
             
         print(f"✅ STEP 5: Email ready → {email_addr}")
         
-        # Try Resend first (Render/Cloud), fallback SMTP
+        # Direct Resend HTTP API (NO PACKAGE NEEDED)
         resend_api_key = os.getenv("RESEND_API_KEY")
         if resend_api_key:
-            print("🚀 STEP 6: Using Resend API")
-            try:
-                import resend
-                resend.api_key = resend_api_key
-                
-                incident_text = ""
-                for i, inc in enumerate(incidents[:5], 1):
-                    timestamp = inc.get('timestamp_formatted', 'N/A')
-                    confidence = inc.get('confidence', 0)
-                    incident_text += f"<li>Time: {timestamp} - Confidence: {confidence:.1%}</li>"
-                
-                html_body = f"""
-                <h2>🚨 VIOLENCE DETECTED!</h2>
-                <p><strong>{len(incidents)} incidents</strong> in <strong>{video_filename}</strong></p>
-                <ul>{incident_text}</ul>
-                <p><a href="https://violence-detection-cctv-niranjana006.streamlit.app" style="background:#ff4b4b;color:white;padding:10px 20px;text-decoration:none;border-radius:5px">View Dashboard</a></p>
-                """
-                
-                resend.Emails.send({
-                    "from": "Violence Detection <noreply@yourdomain.com>",
-                    "to": email_addr,
-                    "subject": f"🚨 {len(incidents)} Violence Incidents Detected",
-                    "html": html_body
-                })
+            print("🚀 STEP 6: Direct Resend HTTP")
+            import requests
+            import json
+            
+            incident_text = ""
+            for i, inc in enumerate(incidents[:5], 1):
+                timestamp = inc.get('timestamp_formatted', 'N/A')
+                confidence = inc.get('confidence', 0)
+                incident_text += f"<li>Time: {timestamp} - Confidence: {confidence:.1%}</li>"
+            
+            html_body = f"""
+            <h2>🚨 VIOLENCE DETECTED!</h2>
+            <p><strong>{len(incidents)} incidents</strong> in <strong>{video_filename}</strong></p>
+            <ul>{incident_text}</ul>
+            <p><a href="https://violence-detection-cctv-niranjana006.streamlit.app" style="background:#ff4b4b;color:white;padding:10px 20px;text-decoration:none;border-radius:5px">View Dashboard</a></p>
+            """
+            
+            headers = {
+                "Authorization": f"Bearer {resend_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "from": "Violence Detection <noreply@yourdomain.com>",
+                "to": [email_addr],
+                "subject": f"🚨 {len(incidents)} Violence Incidents Detected",
+                "html": html_body
+            }
+            
+            response = requests.post(
+                "https://api.resend.com/emails",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
                 print("✅ STEP 11: Resend email sent!")
                 return
-            except Exception as e:
-                print(f"⚠️ Resend failed: {e}")
+            else:
+                print(f"⚠️ Resend HTTP failed: {response.status_code} - {response.text}")
         
-        # Fallback SMTP (local/Streamlit Cloud)
-        print("⏳ STEP 6: SMTP fallback")
-        smtp_server = os.getenv("SMTP_SERVER") or "smtp.gmail.com"
-        smtp_port = int(os.getenv("SMTP_PORT", 587))
-        sender_email = os.getenv("SENDER_EMAIL")
-        sender_password = os.getenv("SENDER_PASSWORD")
-        
-        if not sender_email or not sender_password:
-            print("❌ STEP 6: Missing SMTP creds")
-            return
-            
-        # Your existing SMTP code (STEP 7-11 stays same)
-        import smtplib
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
-        
-        msg = MIMEMultipart()
-        msg['From'] = sender_email
-        msg['To'] = email_addr
-        msg['Subject'] = f"🚨 VIOLENCE DETECTED - {len(incidents)} incidents"
-        
-        incident_text = ""
-        for i, inc in enumerate(incidents[:10], 1):
-            timestamp = inc.get('timestamp_formatted', 'N/A')
-            confidence = inc.get('confidence', 0)
-            incident_text += f"  {i}. Time: {timestamp} - Confidence: {confidence:.1%}\n"
-        
-        body = f"""Dear {username},
-
-🚨 VIOLENCE DETECTED IN YOUR VIDEO! 🚨
-
-Detection Summary:
-• Total incidents: {len(incidents)}
-• Video: {video_filename}
-
-Incidents:
-{incident_text}
-
-Login: https://violence-detection-cctv-niranjana006.streamlit.app
-"""
-        msg.attach(MIMEText(body, 'plain'))
-        
-        server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.sendmail(sender_email, email_addr, msg.as_string())
-        server.quit()
-        print("✅ STEP 11: SMTP email sent!")
+        print("❌ STEP 6: No Resend API key")
         
     except Exception as e:
         print(f"❌ EMAIL ERROR: {e}")
-
 
 # Video Processing Functions
 def process_video_file(video_path, user_id, video_id, detector, progress_bar, status_text):
