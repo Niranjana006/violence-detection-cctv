@@ -141,75 +141,87 @@ class ViolenceDetector:
 
 # Email Notification System - FIXED VERSION
 def send_email_notification(user_id, video_filename, incidents):
-    """Send email notification for detected incidents - WITH DETAILED DEBUG"""
+    """Send email via Resend API - Render/Cloud compatible"""
     try:
         print(f"\n{'='*60}")
-        print(f"🔥 STEP 1: EMAIL FUNCTION CALLED")
-        print(f"   user_id={user_id}, video={video_filename}, incidents={len(incidents)}")
+        print(f"🔥 STEP 1: EMAIL FUNCTION CALLED - {len(incidents)} incidents")
         print(f"{'='*60}")
         
-        if not incidents or len(incidents) == 0:
-            print("❌ STEP 2: No incidents to notify - RETURNING")
+        if not incidents:
+            print("❌ STEP 2: No incidents - RETURNING")
             return
-        
-        print("✅ STEP 2: Incidents exist, proceeding...")
-        
-        # Get user settings
-        print("⏳ STEP 3: Fetching user settings from database...")
+            
+        # User settings
+        print("⏳ STEP 3: Fetching user settings...")
         conn = sqlite3.connect('violence_detection.db')
         cursor = conn.cursor()
         cursor.execute('''
-        SELECT us.email_notifications, us.notification_email, u.username
-        FROM user_settings us JOIN users u ON us.user_id = u.id
-        WHERE us.user_id = ?
+            SELECT us.email_notifications, us.notification_email, u.username
+            FROM user_settings us JOIN users u ON us.user_id = u.id
+            WHERE us.user_id = ?
         ''', (user_id,))
-        
         settings = cursor.fetchone()
         conn.close()
         
         if not settings:
-            print("❌ STEP 3: No user settings found - RETURNING")
+            print("❌ STEP 3: No settings")
             return
-        
-        print("✅ STEP 3: User settings retrieved")
-        
-        email_enabled, email_addr, username = settings
-        
-        if not email_enabled:
-            print(f"❌ STEP 4: Email notifications DISABLED for {username}")
-            return
-        
-        print(f"✅ STEP 4: Email notifications ENABLED")
-        
-        if not email_addr:
-            print(f"❌ STEP 5: No email address set for {username}")
-            return
-        
-        print(f"✅ STEP 5: Email address set → {email_addr}")
-        
-        # Get secrets
-        print("⏳ STEP 6: Loading SMTP credentials...")
-        try:
-            smtp_server = os.getenv("SMTP_SERVER") or "smtp.gmail.com"
-            smtp_port = int(os.getenv("SMTP_PORT", 587))
-            sender_email = os.getenv("SENDER_EMAIL")
-            sender_password = os.getenv("SENDER_PASSWORD")
-            print(f"✅ STEP 6: Loaded from Streamlit Secrets")
             
-        except Exception as e:
-            print(f"⚠️ Streamlit secrets failed: {e}")
+        email_enabled, email_addr, username = settings
+        if not email_enabled or not email_addr:
+            print("❌ STEP 4: Email disabled/missing")
             return
+            
+        print(f"✅ STEP 5: Email ready → {email_addr}")
+        
+        # Try Resend first (Render/Cloud), fallback SMTP
+        resend_api_key = os.getenv("RESEND_API_KEY")
+        if resend_api_key:
+            print("🚀 STEP 6: Using Resend API")
+            try:
+                import resend
+                resend.api_key = resend_api_key
+                
+                incident_text = ""
+                for i, inc in enumerate(incidents[:5], 1):
+                    timestamp = inc.get('timestamp_formatted', 'N/A')
+                    confidence = inc.get('confidence', 0)
+                    incident_text += f"<li>Time: {timestamp} - Confidence: {confidence:.1%}</li>"
+                
+                html_body = f"""
+                <h2>🚨 VIOLENCE DETECTED!</h2>
+                <p><strong>{len(incidents)} incidents</strong> in <strong>{video_filename}</strong></p>
+                <ul>{incident_text}</ul>
+                <p><a href="https://violence-detection-cctv-niranjana006.streamlit.app" style="background:#ff4b4b;color:white;padding:10px 20px;text-decoration:none;border-radius:5px">View Dashboard</a></p>
+                """
+                
+                resend.Emails.send({
+                    "from": "Violence Detection <noreply@yourdomain.com>",
+                    "to": email_addr,
+                    "subject": f"🚨 {len(incidents)} Violence Incidents Detected",
+                    "html": html_body
+                })
+                print("✅ STEP 11: Resend email sent!")
+                return
+            except Exception as e:
+                print(f"⚠️ Resend failed: {e}")
+        
+        # Fallback SMTP (local/Streamlit Cloud)
+        print("⏳ STEP 6: SMTP fallback")
+        smtp_server = os.getenv("SMTP_SERVER") or "smtp.gmail.com"
+        smtp_port = int(os.getenv("SMTP_PORT", 587))
+        sender_email = os.getenv("SENDER_EMAIL")
+        sender_password = os.getenv("SENDER_PASSWORD")
         
         if not sender_email or not sender_password:
-            print(f"❌ STEP 6: SMTP credentials MISSING")
-            print(f"   SENDER_EMAIL: {sender_email}")
-            print(f"   SENDER_PASSWORD: {'*' * len(sender_password) if sender_password else 'NONE'}")
+            print("❌ STEP 6: Missing SMTP creds")
             return
+            
+        # Your existing SMTP code (STEP 7-11 stays same)
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
         
-        print(f"✅ STEP 6: All SMTP credentials present")
-        
-        # Build email
-        print("⏳ STEP 7: Building email message...")
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = email_addr
@@ -217,13 +229,9 @@ def send_email_notification(user_id, video_filename, incidents):
         
         incident_text = ""
         for i, inc in enumerate(incidents[:10], 1):
-            if isinstance(inc, dict):
-                timestamp = inc.get('timestamp_formatted', 'N/A')
-                confidence = inc.get('confidence', 0)
-            else:
-                timestamp = "N/A"
-                confidence = 0
-            incident_text += f"   {i}. Time: {timestamp} - Confidence: {confidence:.1%}\n"
+            timestamp = inc.get('timestamp_formatted', 'N/A')
+            confidence = inc.get('confidence', 0)
+            incident_text += f"  {i}. Time: {timestamp} - Confidence: {confidence:.1%}\n"
         
         body = f"""Dear {username},
 
@@ -232,71 +240,24 @@ def send_email_notification(user_id, video_filename, incidents):
 Detection Summary:
 • Total incidents: {len(incidents)}
 • Video: {video_filename}
-• Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 Incidents:
 {incident_text}
 
 Login: https://violence-detection-cctv-niranjana006.streamlit.app
 """
-        
         msg.attach(MIMEText(body, 'plain'))
-        print(f"✅ STEP 7: Email message built")
         
-        # Connect to SMTP
-        print(f"⏳ STEP 8: Connecting to SMTP server {smtp_server}:{smtp_port}...")
-        try:
-            server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
-            print(f"✅ STEP 8: SMTP connection established")
-        except smtplib.SMTPException as e:
-            print(f"❌ STEP 8: SMTP connection failed: {e}")
-            return
-        
-        # Start TLS
-        print(f"⏳ STEP 9: Starting TLS encryption...")
-        try:
-            server.starttls()
-            print(f"✅ STEP 9: TLS started")
-        except smtplib.SMTPException as e:
-            print(f"❌ STEP 9: TLS failed: {e}")
-            server.quit()
-            return
-        
-        # Login
-        print(f"⏳ STEP 10: Authenticating with email: {sender_email}...")
-        try:
-            server.login(sender_email, sender_password)
-            print(f"✅ STEP 10: Authentication successful")
-        except smtplib.SMTPAuthenticationError as e:
-            print(f"❌ STEP 10: Authentication FAILED: {e}")
-            print(f"   Check your SMTP credentials in .env or Streamlit Secrets")
-            server.quit()
-            return
-        except smtplib.SMTPException as e:
-            print(f"❌ STEP 10: Login error: {e}")
-            server.quit()
-            return
-        
-        # Send email
-        print(f"⏳ STEP 11: Sending email to {email_addr}...")
-        try:
-            server.sendmail(sender_email, email_addr, msg.as_string())
-            print(f"✅ STEP 11: Email sent successfully")
-        except smtplib.SMTPException as e:
-            print(f"❌ STEP 11: Send failed: {e}")
-            server.quit()
-            return
-        
-        # Close connection
+        server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, email_addr, msg.as_string())
         server.quit()
-        print(f"\n{'='*60}")
-        print(f"✅✅✅ EMAIL SUCCESSFULLY SENT TO {email_addr} ✅✅✅")
-        print(f"{'='*60}\n")
+        print("✅ STEP 11: SMTP email sent!")
         
     except Exception as e:
-        print(f"❌ UNEXPECTED ERROR: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ EMAIL ERROR: {e}")
+
 
 # Video Processing Functions
 def process_video_file(video_path, user_id, video_id, detector, progress_bar, status_text):
