@@ -200,7 +200,7 @@ def send_email_notification(user_id, video_filename, incidents):
             }
             
             payload = {
-                "from": "Violence Detection <noreply@yourdomain.com>",
+                "from": "Violence Detection <onboarding@resend.dev>",
                 "to": [email_addr],
                 "subject": f"🚨 {len(incidents)} Violence Incidents Detected",
                 "html": html_body
